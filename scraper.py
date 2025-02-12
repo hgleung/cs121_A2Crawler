@@ -1,7 +1,8 @@
 import re
 from urllib.parse import urlparse, urljoin, urldefrag
 from bs4 import BeautifulSoup
-from collections import Counter
+from collections import Counter, defaultdict
+import hashlib
 
 # Common English stop words
 STOP_WORDS = {
@@ -33,15 +34,54 @@ page_word_counts = {}
 word_frequencies = Counter()
 subdomains = Counter()
 
+# Trap detection variables
+url_patterns = defaultdict(int)  # Track URL pattern frequencies
+content_hashes = defaultdict(list)  # Track content similarity
+MAX_PATTERN_REPEAT = 10  # Maximum times a URL pattern can repeat
+MAX_SIMILAR_CONTENT = 5  # Maximum number of pages with similar content
+MIN_WORDS_PER_PAGE = 50  # Minimum words for a page to be considered content-rich
+
 def tokenize_text(text):
-    """
-    Simple regex-based word tokenizer from assignment 1
-    """
+    """Simple regex-based word tokenizer from assignment 1"""
     words = re.findall(r"[a-zA-Z0-9]+", text.lower())
     return [word for word in words 
             if word not in STOP_WORDS 
             and not word.isdigit() 
-            and len(word) > 1]  # Filter out single characters
+            and len(word) > 1]
+
+def get_url_pattern(url):
+    """Extract pattern from URL for trap detection"""
+    parsed = urlparse(url)
+    # Remove numbers from path to detect patterns like /page/1, /page/2
+    path_pattern = re.sub(r'\d+', 'N', parsed.path)
+    return f"{parsed.netloc}{path_pattern}"
+
+def get_content_hash(text):
+    """Generate hash of page content for similarity detection.
+    Using hashlib for now; implement from scratch later."""
+    # Only use the first 1000 words to avoid memory issues
+    words = ' '.join(tokenize_text(text)[:1000])
+    return hashlib.md5(words.encode('utf-8')).hexdigest()
+
+def is_trap(url, content):
+    """Detect if URL or content indicates a trap"""
+    # Check URL pattern repetition
+    pattern = get_url_pattern(url)
+    url_patterns[pattern] += 1
+    if url_patterns[pattern] > MAX_PATTERN_REPEAT:
+        print(f"Trap detected: URL pattern {pattern} repeated too many times")
+        return True
+        
+    # Check content similarity
+    if content:
+        content_hash = get_content_hash(content)
+        similar_pages = content_hashes[content_hash]
+        if len(similar_pages) >= MAX_SIMILAR_CONTENT:
+            print(f"Trap detected: Too many similar pages with hash {content_hash}")
+            return True
+        similar_pages.append(url)
+    
+    return False
 
 def scraper(url, resp):
     links = extract_next_links(url, resp)
@@ -50,30 +90,43 @@ def scraper(url, resp):
 def extract_next_links(url, resp):
     extracted_links = []
     
-    # Check if the response is valid
+    # Handle various response issues
     if resp.status != 200:
+        print(f"Skipping {url} due to status {resp.status}")
+        return extracted_links
+        
+    if resp.raw_response is None or resp.raw_response.content is None:
+        print(f"Skipping {url} due to empty response")
         return extracted_links
 
     try:
-        # Get the defragmented URL
-        defrag_url, _ = urldefrag(resp.url)
+        # Handle redirects by using the final URL
+        final_url = resp.raw_response.url
+        defrag_url, _ = urldefrag(final_url)
         
-        # Add to unique pages if not seen before
+        # Parse content
+        soup = BeautifulSoup(resp.raw_response.content, 'html.parser')
+        
+        # Remove script, style, and other non-content elements
+        for element in soup(['script', 'style', 'nav', 'header', 'footer']):
+            element.decompose()
+            
+        # Get text content
+        text = soup.get_text()
+        words = tokenize_text(text)
+        
+        # Skip pages with too little content
+        if len(words) < MIN_WORDS_PER_PAGE:
+            print(f"Skipping {url} due to insufficient content: {len(words)} words")
+            return extracted_links
+            
+        # Check for traps
+        if is_trap(defrag_url, text):
+            return extracted_links
+            
+        # Process valid page
         if defrag_url not in unique_pages:
             unique_pages.add(defrag_url)
-            
-            # Parse content with BeautifulSoup
-            soup = BeautifulSoup(resp.raw_response.content, 'html.parser')
-            
-            # Remove script and style elements
-            for script in soup(["script", "style"]):
-                script.decompose()
-                
-            # Get text and count words
-            text = soup.get_text()
-            words = tokenize_text(text)
-            
-            # Update statistics
             page_word_counts[defrag_url] = len(words)
             word_frequencies.update(words)
             
@@ -82,15 +135,16 @@ def extract_next_links(url, resp):
             if 'ics.uci.edu' in parsed_url.netloc:
                 subdomains[parsed_url.netloc] += 1
         
-        # Extract all links from the page
+        # Extract links
         for link in soup.find_all('a'):
             href = link.get('href')
             if href:
-                # Convert relative URLs to absolute URLs
-                absolute_url = urljoin(resp.url, href)
+                # Convert relative URLs to absolute
+                absolute_url = urljoin(final_url, href)
                 # Remove fragments
                 clean_url, _ = urldefrag(absolute_url)
-                extracted_links.append(clean_url)
+                if clean_url not in extracted_links:  # Avoid duplicates
+                    extracted_links.append(clean_url)
                 
     except Exception as e:
         print(f"Error processing {url}: {str(e)}")
@@ -104,12 +158,14 @@ def is_valid(url):
             return False
             
         # Check if URL is within allowed domains
-        if not any(domain in parsed.netloc for domain in [
+        allowed_domains = [
             'ics.uci.edu',
             'cs.uci.edu',
             'informatics.uci.edu',
             'stat.uci.edu'
-        ]):
+        ]
+        
+        if not any(domain in parsed.netloc.lower() for domain in allowed_domains):
             return False
             
         # Check for file extensions to avoid
@@ -129,12 +185,3 @@ def is_valid(url):
     except TypeError:
         print("TypeError for", parsed)
         return False
-
-def get_analytics():
-    """Return analytics about the crawl"""
-    return {
-        'unique_pages': len(unique_pages),
-        'longest_page': max(page_word_counts.items(), key=lambda x: x[1]) if page_word_counts else None,
-        'common_words': word_frequencies.most_common(50),
-        'subdomains': sorted([(domain, count) for domain, count in subdomains.items()], key=lambda x: x[0])
-    }
