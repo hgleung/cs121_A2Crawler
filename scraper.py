@@ -156,16 +156,20 @@ def is_valid(url):
         parsed = urlparse(url)
         if parsed.scheme not in set(["http", "https"]):
             return False
-            
+
         # Check if URL is within allowed domains
-        allowed_domains = [
-            'ics.uci.edu',
-            'cs.uci.edu',
-            'informatics.uci.edu',
-            'stat.uci.edu'
+        netloc = parsed.netloc.lower()
+        
+        # Check for the allowed domain patterns
+        valid_domains = [
+            ".ics.uci.edu",
+            ".cs.uci.edu",
+            ".informatics.uci.edu",
+            ".stat.uci.edu"
         ]
         
-        if not any(domain in parsed.netloc.lower() for domain in allowed_domains):
+        # The netloc must end with one of the valid domains
+        if not any(netloc.endswith(domain) for domain in valid_domains):
             return False
             
         # Check for file extensions to avoid
