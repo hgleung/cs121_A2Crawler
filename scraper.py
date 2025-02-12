@@ -84,8 +84,11 @@ def is_trap(url, content):
     return False
 
 def scraper(url, resp):
+    print(f"\nProcessing URL: {url}")
     links = extract_next_links(url, resp)
-    return [link for link in links if is_valid(link)]
+    valid_links = [link for link in links if is_valid(link)]
+    print(f"Found {len(links)} links, {len(valid_links)} valid")
+    return valid_links
 
 def extract_next_links(url, resp):
     extracted_links = []
@@ -139,12 +142,15 @@ def extract_next_links(url, resp):
         for link in soup.find_all('a'):
             href = link.get('href')
             if href:
-                # Convert relative URLs to absolute
-                absolute_url = urljoin(final_url, href)
-                # Remove fragments
-                clean_url, _ = urldefrag(absolute_url)
-                if clean_url not in extracted_links:  # Avoid duplicates
-                    extracted_links.append(clean_url)
+                try:
+                    # Convert relative URLs to absolute
+                    absolute_url = urljoin(final_url, href)
+                    # Remove fragments
+                    clean_url, _ = urldefrag(absolute_url)
+                    if clean_url not in extracted_links:  # Avoid duplicates
+                        extracted_links.append(clean_url)
+                except Exception as e:
+                    print(f"Error processing link {href}: {str(e)}")
                 
     except Exception as e:
         print(f"Error processing {url}: {str(e)}")
@@ -155,22 +161,23 @@ def is_valid(url):
     try:
         parsed = urlparse(url)
         if parsed.scheme not in set(["http", "https"]):
+            print(f"Rejecting {url}: invalid scheme {parsed.scheme}")
             return False
 
         # Check if URL is within allowed domains
         netloc = parsed.netloc.lower()
-        print(netloc)
         
         # Check for the allowed domain patterns
         valid_domains = [
-            ".ics.uci.edu",
-            ".cs.uci.edu",
-            ".informatics.uci.edu",
-            ".stat.uci.edu"
+            "ics.uci.edu",
+            "cs.uci.edu",
+            "informatics.uci.edu",
+            "stat.uci.edu"
         ]
         
-        # The netloc must end with one of the valid domains
-        if not any(netloc.endswith(domain) for domain in valid_domains):
+        # The domain must contain one of the valid domains
+        if not any(domain in netloc for domain in valid_domains):
+            print(f"Rejecting {url}: domain {netloc} not in allowed list")
             return False
             
         # Check for file extensions to avoid
@@ -183,10 +190,14 @@ def is_valid(url):
             + r"|epub|dll|cnf|tgz|sha1"
             + r"|thmx|mso|arff|rtf|jar|csv"
             + r"|rm|smil|wmv|swf|wma|zip|rar|gz)$", parsed.path.lower()):
+            print(f"Rejecting {url}: invalid file extension")
             return False
             
         return True
 
     except TypeError:
-        print("TypeError for", parsed)
+        print(f"TypeError for {url}")
+        return False
+    except Exception as e:
+        print(f"Error validating {url}: {str(e)}")
         return False
