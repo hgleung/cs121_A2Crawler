@@ -1,31 +1,97 @@
 import re
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin, urldefrag
+from bs4 import BeautifulSoup
+import nltk
+from nltk.corpus import stopwords
+from collections import Counter
+
+# Download required NLTK data
+try:
+    nltk.data.find('tokenizers/punkt')
+    nltk.data.find('corpora/stopwords')
+except LookupError:
+    nltk.download('punkt')
+    nltk.download('stopwords')
+
+# Global variables to track statistics
+unique_pages = set()
+page_word_counts = {}
+word_frequencies = Counter()
+subdomains = Counter()
 
 def scraper(url, resp):
     links = extract_next_links(url, resp)
     return [link for link in links if is_valid(link)]
 
 def extract_next_links(url, resp):
-    # Implementation required.
-    # url: the URL that was used to get the page
-    # resp.url: the actual url of the page
-    # resp.status: the status code returned by the server. 200 is OK, you got the page. Other numbers mean that there was some kind of problem.
-    # resp.error: when status is not 200, you can check the error here, if needed.
-    # resp.raw_response: this is where the page actually is. More specifically, the raw_response has two parts:
-    #         resp.raw_response.url: the url, again
-    #         resp.raw_response.content: the content of the page!
-    # Return a list with the hyperlinks (as strings) scrapped from resp.raw_response.content
-    return list()
+    extracted_links = []
+    
+    # Check if the response is valid
+    if resp.status != 200:
+        return extracted_links
+
+    try:
+        # Get the defragmented URL
+        defrag_url, _ = urldefrag(resp.url)
+        
+        # Add to unique pages if not seen before
+        if defrag_url not in unique_pages:
+            unique_pages.add(defrag_url)
+            
+            # Parse content with BeautifulSoup
+            soup = BeautifulSoup(resp.raw_response.content, 'html.parser')
+            
+            # Remove script and style elements
+            for script in soup(["script", "style"]):
+                script.decompose()
+                
+            # Get text and count words
+            text = soup.get_text()
+            words = nltk.word_tokenize(text.lower())
+            stop_words = set(stopwords.words('english'))
+            filtered_words = [word for word in words if word.isalnum() and word not in stop_words]
+            
+            # Update statistics
+            page_word_counts[defrag_url] = len(filtered_words)
+            word_frequencies.update(filtered_words)
+            
+            # Track subdomains for ics.uci.edu
+            parsed_url = urlparse(defrag_url)
+            if 'ics.uci.edu' in parsed_url.netloc:
+                subdomains[parsed_url.netloc] += 1
+        
+        # Extract all links from the page
+        for link in soup.find_all('a'):
+            href = link.get('href')
+            if href:
+                # Convert relative URLs to absolute URLs
+                absolute_url = urljoin(resp.url, href)
+                # Remove fragments
+                clean_url, _ = urldefrag(absolute_url)
+                extracted_links.append(clean_url)
+                
+    except Exception as e:
+        print(f"Error processing {url}: {str(e)}")
+        
+    return extracted_links
 
 def is_valid(url):
-    # Decide whether to crawl this url or not. 
-    # If you decide to crawl it, return True; otherwise return False.
-    # There are already some conditions that return False.
     try:
         parsed = urlparse(url)
         if parsed.scheme not in set(["http", "https"]):
             return False
-        return not re.match(
+            
+        # Check if URL is within allowed domains
+        if not any(domain in parsed.netloc for domain in [
+            'ics.uci.edu',
+            'cs.uci.edu',
+            'informatics.uci.edu',
+            'stat.uci.edu'
+        ]):
+            return False
+            
+        # Check for file extensions to avoid
+        if re.match(
             r".*\.(css|js|bmp|gif|jpe?g|ico"
             + r"|png|tiff?|mid|mp2|mp3|mp4"
             + r"|wav|avi|mov|mpeg|ram|m4v|mkv|ogg|ogv|pdf"
@@ -33,8 +99,11 @@ def is_valid(url):
             + r"|data|dat|exe|bz2|tar|msi|bin|7z|psd|dmg|iso"
             + r"|epub|dll|cnf|tgz|sha1"
             + r"|thmx|mso|arff|rtf|jar|csv"
-            + r"|rm|smil|wmv|swf|wma|zip|rar|gz)$", parsed.path.lower())
+            + r"|rm|smil|wmv|swf|wma|zip|rar|gz)$", parsed.path.lower()):
+            return False
+            
+        return True
 
     except TypeError:
-        print ("TypeError for ", parsed)
-        raise
+        print("TypeError for", parsed)
+        return False
