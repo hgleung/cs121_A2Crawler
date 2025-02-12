@@ -159,6 +159,7 @@ def is_valid(url):
 
         # Check if URL is within allowed domains
         netloc = parsed.netloc.lower()
+        print(netloc)
         
         # Check for the allowed domain patterns
         valid_domains = [
