@@ -1,23 +1,47 @@
 import re
 from urllib.parse import urlparse, urljoin, urldefrag
 from bs4 import BeautifulSoup
-import nltk
-from nltk.corpus import stopwords
 from collections import Counter
 
-# Download required NLTK data
-try:
-    nltk.data.find('tokenizers/punkt')
-    nltk.data.find('corpora/stopwords')
-except LookupError:
-    nltk.download('punkt')
-    nltk.download('stopwords')
+# Common English stop words
+STOP_WORDS = {
+    'a', 'about', 'above', 'after', 'again', 'against', 'all', 'am', 'an', 'and',
+    'any', 'are', "aren't", 'as', 'at', 'be', 'because', 'been', 'before', 'being',
+    'below', 'between', 'both', 'but', 'by', "can't", 'cannot', 'could', "couldn't",
+    'did', "didn't", 'do', 'does', "doesn't", 'doing', "don't", 'down', 'during',
+    'each', 'few', 'for', 'from', 'further', 'had', "hadn't", 'has', "hasn't",
+    'have', "haven't", 'having', 'he', "he'd", "he'll", "he's", 'her', 'here',
+    "here's", 'hers', 'herself', 'him', 'himself', 'his', 'how', "how's", 'i',
+    "i'd", "i'll", "i'm", "i've", 'if', 'in', 'into', 'is', "isn't", 'it', "it's",
+    'its', 'itself', "let's", 'me', 'more', 'most', "mustn't", 'my', 'myself',
+    'no', 'nor', 'not', 'of', 'off', 'on', 'once', 'only', 'or', 'other', 'ought',
+    'our', 'ours', 'ourselves', 'out', 'over', 'own', 'same', "shan't", 'she',
+    "she'd", "she'll", "she's", 'should', "shouldn't", 'so', 'some', 'such',
+    'than', 'that', "that's", 'the', 'their', 'theirs', 'them', 'themselves',
+    'then', 'there', "there's", 'these', 'they', "they'd", "they'll", "they're",
+    "they've", 'this', 'those', 'through', 'to', 'too', 'under', 'until', 'up',
+    'very', 'was', "wasn't", 'we', "we'd", "we'll", "we're", "we've", 'were',
+    "weren't", 'what', "what's", 'when', "when's", 'where', "where's", 'which',
+    'while', 'who', "who's", 'whom', 'why', "why's", 'with', "won't", 'would',
+    "wouldn't", 'you', "you'd", "you'll", "you're", "you've", 'your', 'yours',
+    'yourself', 'yourselves'
+}
 
 # Global variables to track statistics
 unique_pages = set()
 page_word_counts = {}
 word_frequencies = Counter()
 subdomains = Counter()
+
+def tokenize_text(text):
+    """
+    Simple regex-based word tokenizer from assignment 1
+    """
+    words = re.findall(r"[a-zA-Z0-9]+", text.lower())
+    return [word for word in words 
+            if word not in STOP_WORDS 
+            and not word.isdigit() 
+            and len(word) > 1]  # Filter out single characters
 
 def scraper(url, resp):
     links = extract_next_links(url, resp)
@@ -47,13 +71,11 @@ def extract_next_links(url, resp):
                 
             # Get text and count words
             text = soup.get_text()
-            words = nltk.word_tokenize(text.lower())
-            stop_words = set(stopwords.words('english'))
-            filtered_words = [word for word in words if word.isalnum() and word not in stop_words]
+            words = tokenize_text(text)
             
             # Update statistics
-            page_word_counts[defrag_url] = len(filtered_words)
-            word_frequencies.update(filtered_words)
+            page_word_counts[defrag_url] = len(words)
+            word_frequencies.update(words)
             
             # Track subdomains for ics.uci.edu
             parsed_url = urlparse(defrag_url)
@@ -107,3 +129,12 @@ def is_valid(url):
     except TypeError:
         print("TypeError for", parsed)
         return False
+
+def get_analytics():
+    """Return analytics about the crawl"""
+    return {
+        'unique_pages': len(unique_pages),
+        'longest_page': max(page_word_counts.items(), key=lambda x: x[1]) if page_word_counts else None,
+        'common_words': word_frequencies.most_common(50),
+        'subdomains': sorted([(domain, count) for domain, count in subdomains.items()], key=lambda x: x[0])
+    }
