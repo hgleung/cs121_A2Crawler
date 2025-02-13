@@ -3,6 +3,14 @@ from urllib.parse import urlparse, urljoin, urldefrag
 from bs4 import BeautifulSoup
 from collections import Counter, defaultdict
 import hashlib
+import os
+import json
+from threading import Lock
+import time
+
+# Ensure report directory exists
+REPORT_DIR = "report"
+os.makedirs(REPORT_DIR, exist_ok=True)
 
 # Common English stop words
 STOP_WORDS = {
@@ -32,14 +40,45 @@ STOP_WORDS = {
 unique_pages = set()
 page_word_counts = {}
 word_frequencies = Counter()
-subdomains = Counter()
-
-# Trap detection variables
+subdomains = defaultdict(set)  # Changed to track unique pages per subdomain
+report_lock = Lock()  # Thread safety for report writing
 url_patterns = defaultdict(int)  # Track URL pattern frequencies
 content_hashes = defaultdict(list)  # Track content similarity
 MAX_PATTERN_REPEAT = 10  # Maximum times a URL pattern can repeat
 MAX_SIMILAR_CONTENT = 5  # Maximum number of pages with similar content
 MIN_WORDS_PER_PAGE = 50  # Minimum words for a page to be considered content-rich
+
+def update_reports():
+    """Update all report files with current statistics"""
+    with report_lock:
+        # 1. Unique pages report
+        with open(os.path.join(REPORT_DIR, "unique_pages.txt"), "w") as f:
+            f.write(f"Number of unique pages found: {len(unique_pages)}\n\n")
+            f.write("List of unique pages:\n")
+            for page in sorted(unique_pages):
+                f.write(f"{page}\n")
+
+        # 2. Longest page report
+        if page_word_counts:
+            longest_url = max(page_word_counts.items(), key=lambda x: x[1])
+            with open(os.path.join(REPORT_DIR, "longest_page.txt"), "w") as f:
+                f.write(f"URL: {longest_url[0]}\n")
+                f.write(f"Word count: {longest_url[1]}\n")
+
+        # 3. Common words report
+        with open(os.path.join(REPORT_DIR, "common_words.txt"), "w") as f:
+            f.write("50 most common words and their frequencies:\n")
+            for word, freq in word_frequencies.most_common(50):
+                f.write(f"{word}: {freq}\n")
+
+        # 4. Subdomains report
+        with open(os.path.join(REPORT_DIR, "subdomains.txt"), "w") as f:
+            f.write("Subdomains of ics.uci.edu and their unique page counts:\n")
+            # Sort subdomains alphabetically
+            sorted_subdomains = sorted(subdomains.items(), key=lambda x: x[0])
+            for domain, pages in sorted_subdomains:
+                if "ics.uci.edu" in domain:
+                    f.write(f"{domain}, {len(pages)}\n")
 
 def tokenize_text(text):
     """Simple regex-based word tokenizer from assignment 1"""
@@ -83,6 +122,25 @@ def is_trap(url, content):
     
     return False
 
+def update_stats(url, words):
+    """Update statistics and reports"""
+    # Update unique pages
+    unique_pages.add(url)
+    
+    # Update word count for the page
+    page_word_counts[url] = len(words)
+    
+    # Update word frequencies
+    word_frequencies.update(words)
+    
+    # Update subdomain statistics
+    parsed_url = urlparse(url)
+    netloc = parsed_url.netloc.lower()
+    subdomains[netloc].add(url)
+    
+    # Update report files
+    update_reports()
+
 def scraper(url, resp):
     print(f"\nProcessing URL: {url}")
     links = extract_next_links(url, resp)
@@ -104,18 +162,22 @@ def extract_next_links(url, resp):
 
     try:
         # Handle redirects by using the final URL
-        final_url = resp.raw_response.url
+        final_url = resp.raw_response.url if resp.raw_response.url else url
         defrag_url, _ = urldefrag(final_url)
         
         # Parse content
-        soup = BeautifulSoup(resp.raw_response.content, 'html.parser')
+        try:
+            soup = BeautifulSoup(resp.raw_response.content, 'html.parser')
+        except Exception as e:
+            print(f"Error parsing HTML for {url}: {str(e)}")
+            return extracted_links
         
         # Remove script, style, and other non-content elements
-        for element in soup(['script', 'style', 'nav', 'header', 'footer']):
+        for element in soup(['script', 'style', 'nav', 'header', 'footer', 'noscript', 'meta', 'link']):
             element.decompose()
             
         # Get text content
-        text = soup.get_text()
+        text = soup.get_text(separator=' ', strip=True)
         words = tokenize_text(text)
         
         # Skip pages with too little content
@@ -127,30 +189,29 @@ def extract_next_links(url, resp):
         if is_trap(defrag_url, text):
             return extracted_links
             
-        # Process valid page
-        if defrag_url not in unique_pages:
-            unique_pages.add(defrag_url)
-            page_word_counts[defrag_url] = len(words)
-            word_frequencies.update(words)
-            
-            # Track subdomains for ics.uci.edu
-            parsed_url = urlparse(defrag_url)
-            if 'ics.uci.edu' in parsed_url.netloc:
-                subdomains[parsed_url.netloc] += 1
+        # Process valid page and update statistics
+        update_stats(defrag_url, words)
         
         # Extract links
-        for link in soup.find_all('a'):
+        seen_urls = set()  # Track URLs we've seen in this page
+        for link in soup.find_all('a', href=True):
             href = link.get('href')
-            if href:
-                try:
-                    # Convert relative URLs to absolute
-                    absolute_url = urljoin(final_url, href)
-                    # Remove fragments
-                    clean_url, _ = urldefrag(absolute_url)
-                    if clean_url not in extracted_links:  # Avoid duplicates
-                        extracted_links.append(clean_url)
-                except Exception as e:
-                    print(f"Error processing link {href}: {str(e)}")
+            try:
+                # Convert relative URLs to absolute
+                absolute_url = urljoin(final_url, href)
+                # Remove fragments
+                clean_url, _ = urldefrag(absolute_url)
+                
+                # Skip if we've seen this URL in this page
+                if clean_url in seen_urls:
+                    continue
+                    
+                seen_urls.add(clean_url)
+                extracted_links.append(clean_url)
+                
+            except Exception as e:
+                print(f"Error processing link {href}: {str(e)}")
+                continue
                 
     except Exception as e:
         print(f"Error processing {url}: {str(e)}")
