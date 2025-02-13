@@ -152,11 +152,22 @@ def extract_next_links(url, resp):
     extracted_links = []
     
     # Handle various response issues
-    if resp.status != 200:
+    if not resp.raw_response:
+        print(f"Skipping {url} due to no raw response")
+        return extracted_links
+
+    # Check if this was a successful response or a valid redirect
+    if resp.status not in [200, 301, 302]:
         print(f"Skipping {url} due to status {resp.status}")
         return extracted_links
         
-    if resp.raw_response is None or resp.raw_response.content is None:
+    # For redirects, make sure we ended up at a valid page
+    final_status = resp.raw_response.status_code if hasattr(resp.raw_response, 'status_code') else resp.status
+    if final_status != 200:
+        print(f"Skipping {url} due to final status {final_status}")
+        return extracted_links
+        
+    if resp.raw_response.content is None:
         print(f"Skipping {url} due to empty response")
         return extracted_links
 
