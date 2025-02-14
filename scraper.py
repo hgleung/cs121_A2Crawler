@@ -118,9 +118,17 @@ def get_url_pattern(url):
         # Extract the base wiki page path without query parameters
         path_parts = parsed.path.split('/')
         if 'doku.php' in path_parts:
-            # For wiki pages, only keep the actual page name/path
-            # Remove doku.php and keep the actual wiki page path
-            wiki_path = '/'.join([p for p in path_parts if p and p != 'doku.php'])
+            # Get the actual wiki page path after doku.php
+            doku_index = path_parts.index('doku.php')
+            wiki_path = '/'.join(path_parts[doku_index + 1:]) if doku_index + 1 < len(path_parts) else ''
+            
+            # If there's a query string, only keep the page ID if present
+            if parsed.query:
+                query_params = dict(param.split('=', 1) for param in parsed.query.split('&') if '=' in param)
+                page_id = query_params.get('id', '')
+                if page_id:
+                    wiki_path = page_id
+            
             return f"{parsed.netloc}/wiki/{wiki_path}"
         return f"{parsed.netloc}{parsed.path}"
     
@@ -367,6 +375,20 @@ def is_valid(url):
         if not any(domain in netloc for domain in valid_domains):
             log_info(f"Rejecting {url}: domain {netloc} not in allowed list")
             return False
+            
+        # Special handling for wiki URLs
+        if ('wiki.ics.uci.edu' in netloc or 'swiki.ics.uci.edu' in netloc):
+            # Block problematic wiki query parameters that create duplicate content
+            if parsed.query:
+                query_params = dict(param.split('=', 1) for param in parsed.query.split('&') if '=' in param)
+                # Block certain actions and views that duplicate content
+                if any(param in query_params for param in ['do', 'rev', 'tab_files', 'tab_details', 'image']):
+                    log_info(f"Rejecting {url}: wiki action/view parameter detected")
+                    return False
+                # Block media namespace and other utility pages
+                if query_params.get('ns') in ['projects', 'media', 'wiki', 'windows']:
+                    log_info(f"Rejecting {url}: wiki utility namespace detected")
+                    return False
             
         # Check for potential PDF files that don't end in .pdf
         path_lower = parsed.path.lower()
