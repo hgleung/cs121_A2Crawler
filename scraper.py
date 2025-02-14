@@ -176,6 +176,15 @@ def extract_next_links(url, resp):
         print(f"Skipping {url} due to no raw response")
         return extracted_links
 
+    # Check content type for non-HTML content
+    content_type = resp.raw_response.headers.get('Content-Type', '').lower()
+    if 'text/html' not in content_type:
+        if any(t in content_type for t in ['application/pdf', 'application/x-pdf', 'application/acrobat']):
+            print(f"Skipping {url}: PDF content detected via Content-Type: {content_type}")
+        else:
+            print(f"Skipping {url}: non-HTML content type: {content_type}")
+        return extracted_links
+
     # Check if this was a successful response
     if resp.status != 200:
         # Log 6XX status codes specifically
@@ -264,6 +273,12 @@ def is_valid(url):
             print(f"Rejecting {url}: domain {netloc} not in allowed list")
             return False
             
+        # Check for potential PDF files that don't end in .pdf
+        path_lower = parsed.path.lower()
+        if any(pdf_indicator in path_lower for pdf_indicator in ['/pdf/', '/pdfs/', '/files/pdf/']):
+            print(f"Rejecting {url}: likely PDF document based on path")
+            return False
+            
         # Check for file extensions to avoid
         if re.match(
             r".*\.(css|js|bmp|gif|jpe?g|ico"
@@ -271,9 +286,9 @@ def is_valid(url):
             + r"|wav|avi|mov|mpeg|ram|m4v|mkv|ogg|ogv|pdf"
             + r"|ps|eps|tex|ppt|pptx|pps|ppsx|doc|docx|xls|xlsx|names"
             + r"|data|dat|exe|bz2|tar|msi|bin|7z|psd|dmg|iso"
-            + r"|epub|dll|cnf|tgz|sha1"
+            + r"|epub|dll|cnf|tgz|sha1|sql|mpg"
             + r"|thmx|mso|arff|rtf|jar|csv"
-            + r"|rm|smil|wmv|swf|wma|zip|rar|gz)$", parsed.path.lower()):
+            + r"|rm|smil|wmv|swf|wma|zip|rar|gz)$", path_lower):
             print(f"Rejecting {url}: invalid file extension")
             return False
             
