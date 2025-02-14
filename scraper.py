@@ -191,19 +191,30 @@ def update_stats(url, words):
 
 def log_cache_error(url, status, response):
     """Log 6XX status codes which are specific cache server responses"""
-    with report_lock:
-        with open(os.path.join(REPORT_DIR, "cache_errors.txt"), "a") as f:
-            f.write(f"\nURL: {url}\n")
-            f.write(f"Status Code: {status}\n")
-            # Log the raw response content if available
-            if hasattr(response, 'raw_response') and hasattr(response.raw_response, 'content'):
-                try:
-                    content = response.raw_response.content.decode('utf-8')
-                    f.write(f"Response Content: {content}\n")
-                except:
-                    f.write("Response Content: [Unable to decode response content]\n")
-            f.write("-" * 80 + "\n")
-            f.flush()  # Ensure the content is written immediately
+    try:
+        with report_lock:
+            # Ensure the report directory exists
+            os.makedirs(REPORT_DIR, exist_ok=True)
+            
+            cache_error_file = os.path.join(REPORT_DIR, "cache_errors.txt")
+            # Create the file if it doesn't exist
+            if not os.path.exists(cache_error_file):
+                open(cache_error_file, 'w').close()
+                
+            with open(cache_error_file, "a") as f:
+                f.write(f"\nURL: {url}\n")
+                f.write(f"Status Code: {status}\n")
+                # Log the raw response content if available
+                if hasattr(response, 'raw_response') and hasattr(response.raw_response, 'content'):
+                    try:
+                        content = response.raw_response.content.decode('utf-8')
+                        f.write(f"Response Content: {content}\n")
+                    except:
+                        f.write("Response Content: [Unable to decode response content]\n")
+                f.write("-" * 80 + "\n")
+                f.flush()  # Ensure the content is written immediately
+    except Exception as e:
+        print(f"Error logging cache error for {url}: {str(e)}")
 
 def scraper(url, resp):
     print(f"\nProcessing URL: {url}")
