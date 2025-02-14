@@ -146,6 +146,21 @@ def update_stats(url, words):
     # Update report files
     update_reports()
 
+def log_cache_error(url, status, response):
+    """Log 6XX status codes which are specific cache server responses"""
+    with report_lock:
+        with open(os.path.join(REPORT_DIR, "cache_errors.txt"), "a") as f:
+            f.write(f"\nURL: {url}\n")
+            f.write(f"Status Code: {status}\n")
+            # Log the raw response content if available
+            if hasattr(response, 'raw_response') and hasattr(response.raw_response, 'content'):
+                try:
+                    content = response.raw_response.content.decode('utf-8')
+                    f.write(f"Response Content: {content}\n")
+                except:
+                    f.write("Response Content: [Unable to decode response content]\n")
+            f.write("-" * 80 + "\n")
+
 def scraper(url, resp):
     print(f"\nProcessing URL: {url}")
     links = extract_next_links(url, resp)
@@ -163,6 +178,10 @@ def extract_next_links(url, resp):
 
     # Check if this was a successful response
     if resp.status != 200:
+        # Log 6XX status codes specifically
+        if 600 <= resp.status < 700:
+            print(f"Cache server error for {url} with status {resp.status}")
+            log_cache_error(url, resp.status, resp)
         print(f"Skipping {url} due to status {resp.status}")
         return extracted_links
 
