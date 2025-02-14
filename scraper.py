@@ -165,20 +165,10 @@ def extract_next_links(url, resp):
     if resp.status != 200:
         print(f"Skipping {url} due to status {resp.status}")
         return extracted_links
-        
-    # For redirects, make sure we ended up at a valid page
-    final_status = resp.raw_response.status_code if hasattr(resp.raw_response, 'status_code') else resp.status
-    if final_status != 200:
-        print(f"Skipping {url} due to final status {final_status}")
-        return extracted_links
-        
-    if resp.raw_response.content is None:
-        print(f"Skipping {url} due to empty response")
-        return extracted_links
 
     try:
-        # Handle redirects by using the final URL
-        final_url = resp.raw_response.url if resp.raw_response.url else url
+        # Get the final URL after any redirects and remove fragments
+        final_url = resp.raw_response.url
         defrag_url, _ = urldefrag(final_url)
         
         # Parse content
@@ -213,10 +203,8 @@ def extract_next_links(url, resp):
         for link in soup.find_all('a', href=True):
             href = link.get('href')
             try:
-                # Convert relative URLs to absolute
-                absolute_url = urljoin(final_url, href)
-                # Remove fragments
-                clean_url, _ = urldefrag(absolute_url)
+                # Convert relative URLs to absolute and remove fragments
+                clean_url, _ = urldefrag(urljoin(final_url, href))
                 
                 # Skip if we've seen this URL in this page
                 if clean_url in seen_urls:
