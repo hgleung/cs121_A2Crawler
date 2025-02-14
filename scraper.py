@@ -5,10 +5,27 @@ from collections import Counter, defaultdict
 import hashlib
 import os
 from threading import Lock
+import logging
+from datetime import datetime
 
 # Ensure report directory exists
 REPORT_DIR = "report"
 os.makedirs(REPORT_DIR, exist_ok=True)
+
+# Set up logging to both file and console
+log_file = os.path.join(REPORT_DIR, f"crawler_log.txt")
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_file),
+        logging.StreamHandler()
+    ]
+)
+
+# Replace print statements with logging
+def log_info(message):
+    logging.info(message)
 
 # Common English stop words
 STOP_WORDS = {
@@ -156,7 +173,7 @@ def is_trap(url, content):
     pattern = get_url_pattern(url)
     url_patterns[pattern] += 1
     if url_patterns[pattern] > MAX_PATTERN_REPEAT:
-        print(f"Trap detected: URL pattern {pattern} repeated too many times")
+        log_info(f"Trap detected: URL pattern {pattern} repeated too many times")
         return True
         
     # Check content similarity
@@ -164,7 +181,7 @@ def is_trap(url, content):
         content_hash = get_content_hash(content)
         similar_pages = content_hashes[content_hash]
         if len(similar_pages) >= MAX_SIMILAR_CONTENT:
-            print(f"Trap detected: Too many similar pages with hash {content_hash}")
+            log_info(f"Trap detected: Too many similar pages with hash {content_hash}")
             return True
         similar_pages.append(url)
     
@@ -214,13 +231,13 @@ def log_cache_error(url, status, response):
                 f.write("-" * 80 + "\n")
                 f.flush()  # Ensure the content is written immediately
     except Exception as e:
-        print(f"Error logging cache error for {url}: {str(e)}")
+        log_info(f"Error logging cache error for {url}: {str(e)}")
 
 def scraper(url, resp):
-    print(f"\nProcessing URL: {url}")
+    log_info(f"\nProcessing URL: {url}")
     links = extract_next_links(url, resp)
     valid_links = [link for link in links if is_valid(link)]
-    print(f"Found {len(links)} links, {len(valid_links)} valid")
+    log_info(f"Found {len(links)} links, {len(valid_links)} valid")
     return valid_links
 
 def extract_next_links(url, resp):
@@ -228,25 +245,25 @@ def extract_next_links(url, resp):
     
     # Handle various response issues
     if not resp.raw_response:
-        print(f"Skipping {url} due to no raw response")
+        log_info(f"Skipping {url} due to no raw response")
         return extracted_links
 
     # Check content type for non-HTML content
     content_type = resp.raw_response.headers.get('Content-Type', '').lower()
     if 'text/html' not in content_type:
         if any(t in content_type for t in ['application/pdf', 'application/x-pdf', 'application/acrobat']):
-            print(f"Skipping {url}: PDF content detected via Content-Type: {content_type}")
+            log_info(f"Skipping {url}: PDF content detected via Content-Type: {content_type}")
         else:
-            print(f"Skipping {url}: non-HTML content type: {content_type}")
+            log_info(f"Skipping {url}: non-HTML content type: {content_type}")
         return extracted_links
 
     # Check if this was a successful response
     if resp.status != 200:
         # Log 6XX status codes specifically
         if 600 <= resp.status < 700:
-            print(f"Cache server error for {url} with status {resp.status}")
+            log_info(f"Cache server error for {url} with status {resp.status}")
             log_cache_error(url, resp.status, resp)
-        print(f"Skipping {url} due to status {resp.status}")
+        log_info(f"Skipping {url} due to status {resp.status}")
         return extracted_links
 
     try:
@@ -258,7 +275,7 @@ def extract_next_links(url, resp):
         try:
             soup = BeautifulSoup(resp.raw_response.content, 'html.parser')
         except Exception as e:
-            print(f"Error parsing HTML for {url}: {str(e)}")
+            log_info(f"Error parsing HTML for {url}: {str(e)}")
             return extracted_links
         
         # Remove script, style, and other non-content elements
@@ -271,7 +288,7 @@ def extract_next_links(url, resp):
         
         # Skip pages with too little content
         if len(words) < MIN_WORDS_PER_PAGE:
-            print(f"Skipping {url} due to insufficient content: {len(words)} words")
+            log_info(f"Skipping {url} due to insufficient content: {len(words)} words")
             return extracted_links
             
         # Check for traps
@@ -297,11 +314,11 @@ def extract_next_links(url, resp):
                 extracted_links.append(clean_url)
                 
             except Exception as e:
-                print(f"Error processing link {href}: {str(e)}")
+                log_info(f"Error processing link {href}: {str(e)}")
                 continue
                 
     except Exception as e:
-        print(f"Error processing {url}: {str(e)}")
+        log_info(f"Error processing {url}: {str(e)}")
         
     return extracted_links
 
@@ -309,7 +326,7 @@ def is_valid(url):
     try:
         parsed = urlparse(url)
         if parsed.scheme not in set(["http", "https"]):
-            print(f"Rejecting {url}: invalid scheme {parsed.scheme}")
+            log_info(f"Rejecting {url}: invalid scheme {parsed.scheme}")
             return False
 
         # Check if URL is within allowed domains
@@ -325,13 +342,13 @@ def is_valid(url):
         
         # The domain must contain one of the valid domains
         if not any(domain in netloc for domain in valid_domains):
-            print(f"Rejecting {url}: domain {netloc} not in allowed list")
+            log_info(f"Rejecting {url}: domain {netloc} not in allowed list")
             return False
             
         # Check for potential PDF files that don't end in .pdf
         path_lower = parsed.path.lower()
         if any(pdf_indicator in path_lower for pdf_indicator in ['/pdf/', '/pdfs/', '/files/pdf/']):
-            print(f"Rejecting {url}: likely PDF document based on path")
+            log_info(f"Rejecting {url}: likely PDF document based on path")
             return False
             
         # Check for file extensions to avoid
@@ -344,7 +361,7 @@ def is_valid(url):
             + r"|epub|dll|cnf|tgz|sha1|sql|mpg"
             + r"|thmx|mso|arff|rtf|jar|csv"
             + r"|rm|smil|wmv|swf|wma|zip|rar|gz)$", path_lower):
-            print(f"Rejecting {url}: invalid file extension")
+            log_info(f"Rejecting {url}: invalid file extension")
             return False
             
         # Check for problematic query strings that might cause infinite loops
@@ -354,14 +371,14 @@ def is_valid(url):
                 # Count the number of filter parameters
                 filter_count = sum(1 for param in parsed.query.split('&') if param.startswith('filter'))
                 if filter_count >= 2:  # If there are multiple filter parameters, likely a trap
-                    print(f"Rejecting {url}: contains multiple filter parameters in query string")
+                    log_info(f"Rejecting {url}: contains multiple filter parameters in query string")
                     return False
                     
         return True
 
     except TypeError:
-        print(f"TypeError for {url}")
+        log_info(f"TypeError for {url}")
         return False
     except Exception as e:
-        print(f"Error validating {url}: {str(e)}")
+        log_info(f"Error validating {url}: {str(e)}")
         return False
