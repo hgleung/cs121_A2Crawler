@@ -36,7 +36,7 @@ STOP_WORDS = {
 
 # Non-words that should be ignored, such as http, www or extensions like xml, dav (ICS is allowed)
 NON_WORDS = {
-    'http', 'https', 'xml', 'www', 'edu', 'dav', 'bdd', 'll', 're', 've'
+    'http', 'https', 'xml', 'www', 'edu', 'dav', 'bdd', 'll', 're', 've', 'cfg', 'simse'
 }
 
 # Global variables to track statistics
