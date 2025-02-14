@@ -6,7 +6,6 @@ import hashlib
 import os
 from threading import Lock
 import logging
-from datetime import datetime
 
 # Ensure report directory exists
 REPORT_DIR = "report"
@@ -161,11 +160,31 @@ def get_url_pattern(url):
     return f"{parsed.netloc}{path_pattern}"
 
 def get_content_hash(text):
-    """Generate hash of page content for similarity detection.
-    Using hashlib for now; implement from scratch later."""
-    # Only use the first 1000 words to avoid memory issues
-    words = ' '.join(tokenize_text(text)[:1000])
-    return hashlib.md5(words.encode('utf-8')).hexdigest()
+    """Generate hash of page content for similarity detection."""
+    words = tokenize_text(text)
+    
+    # Skip very short content
+    if len(words) < 20:
+        return None
+        
+    # For archive.ics.uci.edu URLs with search parameters, be more strict
+    if 'archive.ics.uci.edu' in text and ('search=' in text or 'Keywords=' in text):
+        # For search pages, create a more detailed hash
+        all_words = ' '.join(words)
+        return hashlib.md5(all_words.encode('utf-8')).hexdigest()
+    
+    # For other pages, use a sample of words from different parts of the content
+    word_count = len(words)
+    if word_count <= 1000:
+        sampled_words = words
+    else:
+        # Take words from the beginning, middle, and end to catch differences
+        start = words[:300]
+        middle = words[word_count//2-150:word_count//2+150]
+        end = words[-300:]
+        sampled_words = start + middle + end
+    
+    return hashlib.md5(' '.join(sampled_words).encode('utf-8')).hexdigest()
 
 def is_trap(url, content):
     """Detect if URL or content indicates a trap"""
@@ -179,9 +198,13 @@ def is_trap(url, content):
     # Check content similarity
     if content:
         content_hash = get_content_hash(content)
+        if content_hash is None:
+            return False  # Skip similarity check for very short content
+            
         similar_pages = content_hashes[content_hash]
         if len(similar_pages) >= MAX_SIMILAR_CONTENT:
             log_info(f"Trap detected: Too many similar pages with hash {content_hash}")
+            log_info(f"Similar pages: {', '.join(similar_pages)}")
             return True
         similar_pages.append(url)
     
