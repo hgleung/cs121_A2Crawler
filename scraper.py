@@ -96,8 +96,51 @@ def tokenize_text(text):
 def get_url_pattern(url):
     """Extract pattern from URL for trap detection"""
     parsed = urlparse(url)
-    # Remove numbers from path to detect patterns like /page/1, /page/2
-    path_pattern = re.sub(r'\d+', 'N', parsed.path)
+    
+    # Special handling for wiki URLs
+    if 'wiki.ics.uci.edu' in parsed.netloc or 'swiki.ics.uci.edu' in parsed.netloc:
+        # Extract the base wiki page path without query parameters
+        path_parts = parsed.path.split('/')
+        if 'doku.php' in path_parts:
+            # For wiki pages, only keep the actual page name/path
+            # Remove doku.php and keep the actual wiki page path
+            wiki_path = '/'.join([p for p in path_parts if p and p != 'doku.php'])
+            return f"{parsed.netloc}/wiki/{wiki_path}"
+        return f"{parsed.netloc}{parsed.path}"
+    
+    # Special handling for paths containing year ranges (e.g., department-seminars-2013-2014)
+    if 'department-seminars-' in parsed.path:
+        # Keep the year ranges in seminar archive paths
+        path_parts = parsed.path.split('/')
+        path_pattern = []
+        for part in path_parts:
+            if part.startswith('department-seminars-') and re.search(r'\d{4}-\d{4}', part):
+                path_pattern.append(part)  # Keep the entire year range intact
+            else:
+                path_pattern.append(re.sub(r'\d+', 'N', part))
+        path_pattern = '/'.join(path_pattern)
+    else:
+        # Normal path handling for other URLs
+        path_pattern = re.sub(r'\d+', 'N', parsed.path)
+    
+    # Handle query parameters
+    if parsed.query:
+        # Parse query parameters
+        query_params = {}
+        for param in parsed.query.split('&'):
+            if '=' in param:
+                key, value = param.split('=', 1)
+                # Keep specific query parameters intact
+                if key in ['seminar_id', 'event_id', 'post_id', 'page_id', 'archive_year']:
+                    query_params[key] = value
+                else:
+                    # Replace numbers with N in other parameter values
+                    query_params[key] = re.sub(r'\d+', 'N', value)
+        
+        # Reconstruct query string with sorted parameters for consistent comparison
+        query_pattern = '&'.join(f"{k}={v}" for k, v in sorted(query_params.items()))
+        return f"{parsed.netloc}{path_pattern}?{query_pattern}"
+    
     return f"{parsed.netloc}{path_pattern}"
 
 def get_content_hash(text):
@@ -160,6 +203,7 @@ def log_cache_error(url, status, response):
                 except:
                     f.write("Response Content: [Unable to decode response content]\n")
             f.write("-" * 80 + "\n")
+            f.flush()  # Ensure the content is written immediately
 
 def scraper(url, resp):
     print(f"\nProcessing URL: {url}")
