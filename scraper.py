@@ -271,6 +271,16 @@ def is_valid(url):
             print(f"Rejecting {url}: invalid file extension")
             return False
             
+        # Check for problematic query strings that might cause infinite loops
+        if parsed.query:
+            # Check for filter parameters that might create duplicate content
+            if any(param.startswith('filter') for param in parsed.query.split('&')):
+                # Count the number of filter parameters
+                filter_count = sum(1 for param in parsed.query.split('&') if param.startswith('filter'))
+                if filter_count >= 2:  # If there are multiple filter parameters, likely a trap
+                    print(f"Rejecting {url}: contains multiple filter parameters in query string")
+                    return False
+                    
         return True
 
     except TypeError:
