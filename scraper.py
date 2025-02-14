@@ -161,8 +161,8 @@ def extract_next_links(url, resp):
         print(f"Skipping {url} due to no raw response")
         return extracted_links
 
-    # Check if this was a successful response or a valid redirect
-    if resp.status not in [200, 301, 302]:
+    # Check if this was a successful response
+    if resp.status != 200:
         print(f"Skipping {url} due to status {resp.status}")
         return extracted_links
         
