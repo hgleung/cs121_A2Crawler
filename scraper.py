@@ -4,9 +4,7 @@ from bs4 import BeautifulSoup
 from collections import Counter, defaultdict
 import hashlib
 import os
-import json
 from threading import Lock
-import time
 
 # Ensure report directory exists
 REPORT_DIR = "report"
@@ -82,7 +80,8 @@ def update_reports():
             # Sort subdomains alphabetically
             sorted_subdomains = sorted(subdomains.items(), key=lambda x: x[0])
             for domain, pages in sorted_subdomains:
-                if "ics.uci.edu" in domain:
+                # Match ics.uci.edu or *.ics.uci.edu but not informatics.uci.edu
+                if re.match(r'^(?!informatics\.)([\w-]+\.)?ics\.uci\.edu$', domain):
                     f.write(f"{domain}, {len(pages)}\n")
 
 def tokenize_text(text):
