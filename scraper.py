@@ -384,7 +384,7 @@ def is_valid(url):
                 query_params = dict(param.split('=', 1) for param in parsed.query.split('&') if '=' in param)
                 if any(param in query_params for param in ['do']):
                     action = query_params.get('do', '')
-                    if action in ['diff', 'edit', 'backlink']:
+                    if action in ['login', 'recent', 'revisions', 'diff', 'edit', 'backlink', 'resendpwd', 'index', '']:
                         log_info(f"Rejecting {url}: cbcl action parameter detected: {action}")
                         return False
                 
