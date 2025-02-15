@@ -298,9 +298,10 @@ def extract_next_links(url, resp):
         return extracted_links
 
     try:
-        # Get the final URL after any redirects and remove fragments
+        # Get the final URL after any redirects for resolving relative links
         final_url = resp.raw_response.url
-        defrag_url, _ = urldefrag(final_url)
+        # Use original URL for statistics to preserve the URL that was actually crawled
+        defrag_url, _ = urldefrag(url)  # Use original URL instead of final_url
         
         # Parse content
         try:
@@ -332,18 +333,17 @@ def extract_next_links(url, resp):
         # Extract links
         seen_urls = set()  # Track URLs we've seen in this page
         for link in soup.find_all('a', href=True):
-            href = link.get('href')
+            href = link['href'].strip()
+            if not href:
+                continue
+                
             try:
-                # Convert relative URLs to absolute and remove fragments
-                clean_url, _ = urldefrag(urljoin(final_url, href))
-                
-                # Skip if we've seen this URL in this page
-                if clean_url in seen_urls:
-                    continue
-                    
-                seen_urls.add(clean_url)
-                extracted_links.append(clean_url)
-                
+                # Resolve relative URLs against the final URL after redirects
+                absolute_url = urljoin(final_url, href)
+                # Remove fragments from the resolved URL
+                clean_url, _ = urldefrag(absolute_url)
+                if clean_url not in extracted_links:
+                    extracted_links.append(clean_url)
             except Exception as e:
                 log_info(f"Error processing link {href}: {str(e)}")
                 continue
