@@ -404,6 +404,13 @@ def is_valid(url):
                 log_info(f"Rejecting {url}: ics.uci.edu people filter detected")
                 return False
 
+        # Filter directory sorting parameters
+        if parsed.query:
+            # Check for directory sorting parameters (C=N|M|S|D for Name|Modified|Size|Description, O=A|D for Ascending|Descending)
+            if any(param.startswith('C=') or param.startswith('O=') for param in parsed.query.split(';')):
+                log_info(f"Rejecting {url}: directory sorting parameters detected")
+                return False
+
         # Special handling for wiki URLs
         if ('wiki.ics.uci.edu' in netloc or 'swiki.ics.uci.edu' in netloc):
             # Block problematic wiki query parameters that create duplicate content
