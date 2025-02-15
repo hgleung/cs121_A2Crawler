@@ -398,6 +398,12 @@ def is_valid(url):
                 log_info(f"Rejecting {url}: external link encoded in path")
                 return False
 
+        # Special handling for ics.uci.edu/people/ URLs with filters
+        if 'ics.uci.edu' in netloc and '/people/' in parsed.path.lower():
+            if parsed.query and 'filter' in parsed.query.lower():
+                log_info(f"Rejecting {url}: ics.uci.edu people filter detected")
+                return False
+
         # Special handling for wiki URLs
         if ('wiki.ics.uci.edu' in netloc or 'swiki.ics.uci.edu' in netloc):
             # Block problematic wiki query parameters that create duplicate content
