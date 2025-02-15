@@ -371,8 +371,10 @@ def is_valid(url):
             "stat.uci.edu"
         ]
         
-        # The domain must contain one of the valid domains
-        if not any(domain in netloc for domain in valid_domains):
+        # The domain must exactly match one of the valid domains at the end of netloc
+        # This prevents matching substrings in paths or subdomains of other sites
+        if not any(netloc.endswith(domain) and (netloc == domain or netloc.endswith("." + domain)) 
+                  for domain in valid_domains):
             log_info(f"Rejecting {url}: domain {netloc} not in allowed list")
             return False
             
