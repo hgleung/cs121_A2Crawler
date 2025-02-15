@@ -404,6 +404,15 @@ def is_valid(url):
                 log_info(f"Rejecting {url}: ics.uci.edu people filter detected")
                 return False
 
+        # Special handling for grape.ics.uci.edu wiki URLs
+        if 'grape.ics.uci.edu' in netloc and '/wiki/' in parsed.path:
+            if parsed.query:
+                query_params = dict(param.split('=', 1) for param in parsed.query.split('&') if '=' in param)
+                # Block version parameters and diff actions
+                if 'version' in query_params or 'action' in query_params:
+                    log_info(f"Rejecting {url}: grape wiki version/action parameter detected")
+                    return False
+
         # Filter directory sorting parameters
         if parsed.query:
             # Check for directory sorting parameters (C=N|M|S|D for Name|Modified|Size|Description, O=A|D for Ascending|Descending)
