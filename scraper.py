@@ -52,7 +52,7 @@ STOP_WORDS = {
 
 # Non-words that should be ignored, such as http, www or extensions like xml, dav (ICS is allowed)
 NON_WORDS = {
-    'http', 'https', 'xml', 'www', 'edu', 'dav', 'bdd', 'll', 're', 've', 'cfg', 'simse'
+    'http', 'https', 'xml', 'www', 'edu', 'dav', 'bdd', 'll', 're', 've', 'cfg', 'simse', 'sc', 'dt'
 }
 
 # Global variables to track statistics
@@ -102,11 +102,10 @@ def update_reports():
 
 def tokenize_text(text):
     """Simple regex-based word tokenizer from assignment 1"""
-    words = re.findall(r"[a-zA-Z0-9]+", text.lower())
+    words = re.findall(r"[a-zA-Z]+", text.lower())
     return [word for word in words 
             if word not in STOP_WORDS 
             and word not in NON_WORDS
-            and not word.isdigit() 
             and len(word) > 1]
 
 def get_url_pattern(url):
@@ -373,7 +372,7 @@ def is_valid(url):
         
         # The domain must exactly match one of the valid domains at the end of netloc
         # This prevents matching substrings in paths or subdomains of other sites
-        if not any(netloc.endswith(domain) and (netloc == domain or netloc.endswith("." + domain)) 
+        if not any((netloc == domain or netloc.endswith("." + domain)) 
                   for domain in valid_domains):
             log_info(f"Rejecting {url}: domain {netloc} not in allowed list")
             return False
