@@ -377,6 +377,27 @@ def is_valid(url):
             log_info(f"Rejecting {url}: domain {netloc} not in allowed list")
             return False
             
+        # Special handling for cbcl.ics.uci.edu URLs
+        if 'cbcl.ics.uci.edu' in netloc:
+            # Block diff views, edit pages, backlinks and other problematic actions
+            if parsed.query:
+                query_params = dict(param.split('=', 1) for param in parsed.query.split('&') if '=' in param)
+                if any(param in query_params for param in ['do']):
+                    action = query_params.get('do', '')
+                    if action in ['diff', 'edit', 'backlink']:
+                        log_info(f"Rejecting {url}: cbcl action parameter detected: {action}")
+                        return False
+                
+                # Check for PDFs in the id parameter
+                if 'id' in query_params and '.pdf' in query_params['id'].lower():
+                    log_info(f"Rejecting {url}: PDF document referenced in id parameter")
+                    return False
+
+            # Block URLs that seem to encode external links in the path
+            if '/http/' in parsed.path.lower() or '/www.' in parsed.path.lower():
+                log_info(f"Rejecting {url}: external link encoded in path")
+                return False
+
         # Special handling for wiki URLs
         if ('wiki.ics.uci.edu' in netloc or 'swiki.ics.uci.edu' in netloc):
             # Block problematic wiki query parameters that create duplicate content
