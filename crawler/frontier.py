@@ -13,16 +13,26 @@ class Frontier(object):
         self.config = config
         self.to_be_downloaded = list()
         
-        if not os.path.exists(self.config.save_file) and not restart:
+        # Check for any of the shelve file extensions
+        save_exists = any(os.path.exists(f"{self.config.save_file}.{ext}") 
+                         for ext in ['bak', 'dat', 'dir'])
+        
+        if not save_exists and not restart:
             # Save file does not exist, but request to load save.
             self.logger.info(
                 f"Did not find save file {self.config.save_file}, "
                 f"starting from seed.")
-        elif os.path.exists(self.config.save_file) and restart:
-            # Save file does exists, but request to start from seed.
+        elif save_exists and restart:
+            # Save file exists, but request to start from seed.
             self.logger.info(
-                f"Found save file {self.config.save_file}, deleting it.")
-            os.remove(self.config.save_file)
+                f"Found save files {self.config.save_file}.*, deleting them.")
+            # Remove all shelve files
+            for ext in ['bak', 'dat', 'dir']:
+                try:
+                    os.remove(f"{self.config.save_file}.{ext}")
+                except OSError:
+                    pass
+                    
         # Load existing save file, or create one if it does not exist.
         self.save = shelve.open(self.config.save_file)
         if restart:
